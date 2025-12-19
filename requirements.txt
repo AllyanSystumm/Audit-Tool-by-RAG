@@ -1,0 +1,51 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Frontend
+streamlit==1.30.0
+
+# Document Processing
+docx2python==2.0.4          
+pymupdf==1.23.26           
+python-pptx==0.6.23         
+openpyxl==3.1.2             
+xlrd==2.0.1                
+lxml==5.1.0                 
+python-magic==0.4.27       
+python-docx==1.1.0          
+
+# Vector Embeddings & Search
+sentence-transformers==2.3.1 
+chromadb==0.4.22            
+rank-bm25==0.2.2              
+
+# Text Processing & Chunking
+langchain==0.1.4
+langchain-community==0.0.16
+tiktoken==0.5.2              
+
+# LLM Integration
+transformers==4.37.2
+torch==2.1.2                 
+accelerate==0.26.1          
+bitsandbytes==0.42.0        
+einops==0.7.0                
+
+# HuggingFace
+huggingface-hub==0.20.3
+openai==1.12.0               
+
+# Utilities
+python-dotenv==1.0.0         
+requests==2.31.0
+numpy==1.26.3
+pandas==2.2.0
+pydantic==2.5.3
+tqdm==4.66.1
+
+# Development
+pytest==8.0.0
+black==24.1.1
+

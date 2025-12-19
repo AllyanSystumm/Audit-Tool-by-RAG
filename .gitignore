@@ -1,0 +1,50 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# Environment Variables
+.env
+.env.*
+*.env
+env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+dist/
+build/
+
+# Data
+data/
+backend/data/
+
+# Models Cache
+.cache/
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# FAISS Index (old)
+*.index
+
+# HuggingFace Cache
+.huggingface/
+
+*.md
+*.sh
+
