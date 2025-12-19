@@ -1,7 +1,9 @@
 """Embedding generation using sentence transformers."""
 
-from typing import List, Union
+from typing import List, Union, OrderedDict
+from collections import OrderedDict as OrderedDictType
 import hashlib
+import threading
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import logging
@@ -12,48 +14,80 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+class LRUCache:
+    def __init__(self, max_size: int):
+        self._max_size = max_size
+        self._cache: OrderedDictType[str, np.ndarray] = OrderedDictType()
+        self._lock = threading.RLock()
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, key: str) -> Union[np.ndarray, None]:
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                self._hits += 1
+                return self._cache[key]
+            self._misses += 1
+            return None
+
+    def put(self, key: str, value: np.ndarray) -> None:
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                self._cache[key] = value
+            else:
+                if len(self._cache) >= self._max_size:
+                    self._cache.popitem(last=False)
+                self._cache[key] = value
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._cache)
+
+    def stats(self) -> dict:
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = (self._hits / total * 100) if total > 0 else 0.0
+            return {
+                "size": len(self._cache),
+                "max_size": self._max_size,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": round(hit_rate, 2)
+            }
+
+
 class EmbeddingGenerator:
-    """Generate embeddings for text using sentence transformers."""
-    
     def __init__(self, model_name: str = None, device: str = "cpu"):
-        """
-        Initialize the embedding generator.
-        
-        Args:
-            model_name: Name of the sentence transformer model
-            device: Device to run model on ('cpu' or 'cuda')
-        """
         self.model_name = model_name or config.EMBEDDING_MODEL
         self.device = device
-        self._cache: dict[str, np.ndarray] = {}
-        self._cache_max = int(getattr(config, "EMBEDDING_CACHE_MAX", 2048))
+        self._cache = LRUCache(max_size=int(getattr(config, "EMBEDDING_CACHE_MAX", 2048)))
         
-        logger.info(f"Loading embedding model: {self.model_name}")
+        logger.info("Loading embedding model: %s", self.model_name)
         try:
             self.model = SentenceTransformer(self.model_name, device=device)
             self.embedding_dim = self.model.get_sentence_embedding_dimension()
-            logger.info(f"Model loaded successfully. Embedding dimension: {self.embedding_dim}")
+            logger.info("Model loaded successfully. Embedding dimension: %d", self.embedding_dim)
         except Exception as e:
-            logger.error(f"Error loading model: {str(e)}")
+            logger.error("Error loading model: %s", str(e))
             raise
     
+    def _compute_cache_key(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
     def encode(
         self,
         texts: Union[str, List[str]],
         batch_size: int = 32,
         show_progress: bool = False
     ) -> np.ndarray:
-        """
-        Generate embeddings for text(s).
-        
-        Args:
-            texts: Single text or list of texts
-            batch_size: Batch size for encoding
-            show_progress: Show progress bar
-            
-        Returns:
-            Numpy array of embeddings
-        """
         single_input = isinstance(texts, str)
         if single_input:
             texts = [texts]
@@ -63,19 +97,18 @@ class EmbeddingGenerator:
             return np.array([])
         
         try:
-            out: List[np.ndarray] = []
+            out: List[np.ndarray] = [None] * len(texts)
             missing_texts: List[str] = []
             missing_idxs: List[int] = []
 
             for i, t in enumerate(texts):
-                key = hashlib.sha1(t.encode("utf-8", errors="ignore")).hexdigest()
+                key = self._compute_cache_key(t)
                 emb = self._cache.get(key)
-                if emb is None:
+                if emb is not None:
+                    out[i] = emb
+                else:
                     missing_texts.append(t)
                     missing_idxs.append(i)
-                    out.append(None)  
-                else:
-                    out.append(emb)
 
             if missing_texts:
                 new_embs = self.model.encode(
@@ -87,21 +120,17 @@ class EmbeddingGenerator:
                 )
 
                 for t, idx, e in zip(missing_texts, missing_idxs, new_embs):
-                    key = hashlib.sha1(t.encode("utf-8", errors="ignore")).hexdigest()
+                    key = self._compute_cache_key(t)
                     e = np.asarray(e)
-                    self._cache[key] = e
+                    self._cache.put(key, e)
                     out[idx] = e
 
-                if len(self._cache) > self._cache_max:
-                    for k in list(self._cache.keys())[: max(0, len(self._cache) - self._cache_max)]:
-                        self._cache.pop(k, None)
-
             embeddings = np.vstack([np.asarray(e) for e in out]) if out else np.array([])
-            logger.info(f"Generated {len(embeddings)} embeddings")
+            logger.info("Generated %d embeddings (cache: %s)", len(embeddings), self._cache.stats())
             return embeddings
             
         except Exception as e:
-            logger.error(f"Error generating embeddings: {str(e)}")
+            logger.error("Error generating embeddings: %s", str(e))
             raise
     
     def encode_chunks(
@@ -110,17 +139,6 @@ class EmbeddingGenerator:
         text_key: str = 'text',
         batch_size: int = 32
     ) -> List[dict]:
-        """
-        Generate embeddings for a list of chunks.
-        
-        Args:
-            chunks: List of chunk dictionaries
-            text_key: Key in chunk dict containing text
-            batch_size: Batch size for encoding
-            
-        Returns:
-            Chunks with added 'embedding' key
-        """
         if not chunks:
             return []
 
@@ -137,17 +155,6 @@ class EmbeddingGenerator:
         embedding1: np.ndarray,
         embedding2: np.ndarray
     ) -> float:
-        """
-        Compute cosine similarity between two embeddings.
-        
-        Args:
-            embedding1: First embedding vector
-            embedding2: Second embedding vector
-            
-        Returns:
-            Similarity score (0-1)
-        """
-
         return float(np.dot(embedding1, embedding2))
     
     def find_most_similar(
@@ -156,17 +163,6 @@ class EmbeddingGenerator:
         candidate_embeddings: np.ndarray,
         top_k: int = 5
     ) -> List[tuple]:
-        """
-        Find most similar embeddings to query.
-        
-        Args:
-            query_embedding: Query embedding vector
-            candidate_embeddings: Array of candidate embeddings
-            top_k: Number of top results to return
-            
-        Returns:
-            List of (index, similarity_score) tuples
-        """
         similarities = np.dot(candidate_embeddings, query_embedding)
 
         top_indices = np.argsort(similarities)[::-1][:top_k]
@@ -175,31 +171,34 @@ class EmbeddingGenerator:
         
         return results
 
+    def get_cache_stats(self) -> dict:
+        return self._cache.stats()
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+        logger.info("Embedding cache cleared")
+
 
 class EmbeddingCache:
-    """Cache for embeddings to avoid recomputation."""
-    
-    def __init__(self):
-        """Initialize embedding cache."""
-        self.cache = {}
+    def __init__(self, max_size: int = 2048):
+        self._lru = LRUCache(max_size=max_size)
     
     def get(self, text: str) -> Union[np.ndarray, None]:
-        """Get embedding from cache."""
-        key = hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()
-        return self.cache.get(key)
+        key = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+        return self._lru.get(key)
     
     def set(self, text: str, embedding: np.ndarray):
-        """Store embedding in cache."""
-        key = hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()
-        self.cache[key] = embedding
+        key = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+        self._lru.put(key, embedding)
     
     def clear(self):
-        """Clear the cache."""
-        self.cache.clear()
+        self._lru.clear()
     
     def size(self) -> int:
-        """Get cache size."""
-        return len(self.cache)
+        return self._lru.size()
+
+    def stats(self) -> dict:
+        return self._lru.stats()
 
 
 if __name__ == "__main__":
@@ -214,6 +213,8 @@ if __name__ == "__main__":
     embeddings = embedder.encode(texts)
     print(f"Generated embeddings shape: {embeddings.shape}")
 
+    embeddings_cached = embedder.encode(texts)
+    print(f"Cache stats: {embedder.get_cache_stats()}")
+
     sim = embedder.compute_similarity(embeddings[0], embeddings[1])
     print(f"Similarity between text 0 and 1: {sim:.3f}")
-

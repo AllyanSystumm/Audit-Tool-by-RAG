@@ -27,6 +27,14 @@ from backend.generation.llm_client import LLMClient
 from backend.generation.checkpoint_generator import CheckpointGenerator
 from backend.generation.process_profiles import get_profile, detect_process_type
 
+SUPPORTED_EXTENSIONS = {".docx", ".pdf", ".xlsx", ".xls", ".xml", ".pptx", ".txt"}
+
+
+def _is_supported_file(path: Path) -> bool:
+    if path.name.startswith("."):
+        return False
+    return path.suffix.lower() in SUPPORTED_EXTENSIONS
+
 
 def _ingest_file(path: Path, processor: DocumentProcessor, chunker: SemanticChunker, embedder: EmbeddingGenerator, store: VectorStore) -> int:
     res = processor.extract_text(str(path))
@@ -47,9 +55,16 @@ def _ingest_file(path: Path, processor: DocumentProcessor, chunker: SemanticChun
 
 def main():
     uploads = (config.DATA_DIR / "uploads")
-    files = sorted([p for p in uploads.iterdir() if p.is_file()])
+    all_files = sorted([p for p in uploads.iterdir() if p.is_file()])
+    files = [f for f in all_files if _is_supported_file(f)]
+    
+    skipped = len(all_files) - len(files)
+    if skipped > 0:
+        print(f"Skipping {skipped} unsupported file(s)")
+    
     if not files:
-        print(f"No files found under {uploads}")
+        print(f"No supported files found under {uploads}")
+        print(f"Supported extensions: {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
         return
 
     processor = DocumentProcessor()
@@ -59,17 +74,17 @@ def main():
     bm25 = BM25Retriever()
     hybrid = HybridRetriever(store, bm25)
 
-    # Reset DB so eval is deterministic
     store.reset_collection()
 
-    # Ingest KB
     total_chunks = 0
     for f in files:
-        n = _ingest_file(f, processor, chunker, embedder, store)
-        total_chunks += n
-        print(f"Ingested {f.name}: {n} chunks")
+        try:
+            n = _ingest_file(f, processor, chunker, embedder, store)
+            total_chunks += n
+            print(f"Ingested {f.name}: {n} chunks")
+        except Exception as e:
+            print(f"Failed to ingest {f.name}: {e}")
 
-    # Rebuild BM25 from persisted docs
     all_docs = store.get_all_documents()
     docs = all_docs.get("documents") or []
     metas = all_docs.get("metadatas") or []
@@ -88,15 +103,17 @@ def main():
     llm = LLMClient()
     gen = CheckpointGenerator(llm)
 
-    # Run generation per file
     for f in files:
         res = processor.extract_text(str(f))
+        if res.get("status") != "success":
+            print(f"Skipping {f.name}: extraction failed")
+            continue
+            
         text = res["text"]
         resolved_ptype = detect_process_type(filename=f.name, text=text)
         profile = get_profile(process_type="auto", filename=f.name, text=text)
         filter_md = {"process_type": resolved_ptype} if resolved_ptype and resolved_ptype != "auto" else None
 
-        # Simple retrieval: one query is enough for eval display (main API uses multiple)
         retrieved = hybrid.search(text[:1600], embedder, top_k=config.TOP_K_RETRIEVAL, filter_metadata=filter_md, use_reranker=True)
 
         out = gen.generate_checkpoints(
@@ -119,7 +136,6 @@ def main():
         print(f"- schema_ok: {schema_ok}")
 
         if profile is not None and cps:
-            # Canonical prompt anchoring check
             slot_by_phase = {s.process_phase_reference: s for s in profile.slots}
             anchored = 0
             for cp in cps:
@@ -134,5 +150,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
