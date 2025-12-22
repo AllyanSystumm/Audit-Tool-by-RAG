@@ -21,7 +21,7 @@ from backend.ingestion.embedder import EmbeddingGenerator
 from backend.retrieval.vector_store import VectorStore
 from backend.retrieval.bm25_retriever import BM25Retriever
 from backend.retrieval.hybrid_search import HybridRetriever
-from backend.generation.llm_client import LLMClient
+from backend.generation.llm_client import LLMClient, LLMClientFactory
 from backend.generation.checkpoint_generator import CheckpointGenerator
 from backend.generation.process_profiles import detect_process_type
 from backend.generation.prompts import _extract_headings_and_excerpts
@@ -343,15 +343,37 @@ async def ingest_documents(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/llm-models")
+def list_llm_models():
+    return {
+        "status": "success",
+        "models": config.get_available_llms(),
+        "default": config.DEFAULT_LLM,
+        "current": config.LLM_MODEL
+    }
+
+
 @app.post("/generate-checkpoints")
 async def generate_checkpoints(
     file: UploadFile = File(...),
     use_rag: bool = True,
     num_checkpoints: int = 5,
     ingest_to_kb: bool = False,
-    process_type: str = "auto"
+    process_type: str = "auto",
+    llm_model: str = None
 ):
-    if not checkpoint_generator:
+    selected_model = llm_model or config.DEFAULT_LLM
+    
+    try:
+        selected_llm_client = LLMClientFactory.get_client(selected_model)
+        selected_checkpoint_gen = CheckpointGenerator(selected_llm_client)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initialize LLM model '{selected_model}': {str(e)}"
+        )
+    
+    if not selected_checkpoint_gen:
         raise HTTPException(
             status_code=500,
             detail="LLM client not initialized. Please set HF_TOKEN environment variable."
@@ -450,7 +472,7 @@ async def generate_checkpoints(
                     detail="RAG retrieval failed (vector/BM25 search). Check backend logs."
                 )
         
-        result = checkpoint_generator.generate_checkpoints(
+        result = selected_checkpoint_gen.generate_checkpoints(
             process_document,
             relevant_chunks,
             num_checkpoints,
@@ -478,7 +500,9 @@ async def generate_checkpoints(
             "process_type": result.get("process_type", "auto"),
             "process_profile": result.get("process_profile"),
             "process_doc_score": result.get("process_doc_score"),
-            "raw_output": result.get('raw_output', '')
+            "raw_output": result.get('raw_output', ''),
+            "llm_model": selected_model,
+            "llm_model_id": config.get_llm_model_id(selected_model)
         }
         
     except HTTPException:

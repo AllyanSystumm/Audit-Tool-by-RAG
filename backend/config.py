@@ -25,6 +25,34 @@ class Config:
 
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
     LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+    
+    LLM_MODELS = {
+        "gpt-oss-20b": {
+            "id": "openai/gpt-oss-20b",
+            "name": "GPT-OSS 20B",
+            "description": "OpenAI GPT-OSS 20B parameter model",
+            "provider": "huggingface",
+        },
+        "qwen2.5-72b": {
+            "id": "Qwen/Qwen2.5-72B-Instruct",
+            "name": "Qwen 2.5 72B Instruct",
+            "description": "Alibaba Qwen 2.5 72B parameter instruction-tuned model",
+            "provider": "huggingface",
+        },
+    }
+    DEFAULT_LLM = os.getenv("DEFAULT_LLM", "gpt-oss-20b")
+    
+    @classmethod
+    def get_llm_model_id(cls, model_key: str) -> str:
+        if model_key in cls.LLM_MODELS:
+            return cls.LLM_MODELS[model_key]["id"]
+        return cls.LLM_MODEL
+    
+    @classmethod
+    def get_available_llms(cls) -> list:
+        return [
+            {"key": k, **v} for k, v in cls.LLM_MODELS.items()
+        ]
 
     EMBEDDING_CACHE_MAX = int(os.getenv("EMBEDDING_CACHE_MAX", "2048"))
 

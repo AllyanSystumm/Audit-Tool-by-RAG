@@ -60,12 +60,22 @@ st.markdown("""
 
 
 def check_backend_health():
-    """Check if backend is running."""
     try:
         response = requests.get(f"{BACKEND_URL}/health", timeout=2)
         return response.status_code == 200
     except:
         return False
+
+
+def get_available_llm_models():
+    try:
+        response = requests.get(f"{BACKEND_URL}/llm-models", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("models", []), data.get("default", "gpt-oss-20b")
+        return [], "gpt-oss-20b"
+    except:
+        return [], "gpt-oss-20b"
 
 
 def main():
@@ -93,8 +103,35 @@ def main():
         
         st.divider()
         
-        # RAG settings
         if mode == "Generate Checkpoints":
+            st.subheader("🤖 LLM Model")
+            available_models, default_model = get_available_llm_models()
+            
+            if available_models:
+                model_options = {m["key"]: f"{m['name']}" for m in available_models}
+                default_idx = 0
+                for i, m in enumerate(available_models):
+                    if m["key"] == default_model:
+                        default_idx = i
+                        break
+                
+                selected_model = st.selectbox(
+                    "Select LLM Model",
+                    options=list(model_options.keys()),
+                    format_func=lambda x: model_options[x],
+                    index=default_idx,
+                    help="Choose which LLM to use for checkpoint generation"
+                )
+                
+                selected_model_info = next((m for m in available_models if m["key"] == selected_model), None)
+                if selected_model_info:
+                    st.caption(f"📝 {selected_model_info.get('description', '')}")
+            else:
+                selected_model = default_model
+                st.caption("Using default model")
+            
+            st.divider()
+            
             st.subheader("RAG Settings")
             use_rag = st.checkbox("Use RAG (Retrieval)", value=True, help="Use similar documents from knowledge base")
             process_type = st.selectbox(
@@ -113,9 +150,8 @@ def main():
         st.divider()
         st.caption("🔧 Powered by HuggingFace & ChromaDB")
     
-    # Main content
     if mode == "Generate Checkpoints":
-        generate_checkpoints_mode(use_rag, num_checkpoints, process_type)
+        generate_checkpoints_mode(use_rag, num_checkpoints, process_type, selected_model)
     
     elif mode == "Build Knowledge Base":
         build_knowledge_base_mode()
@@ -124,8 +160,7 @@ def main():
         show_database_info()
 
 
-def generate_checkpoints_mode(use_rag, num_checkpoints, process_type):
-    """Generate checkpoints mode."""
+def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model):
     
     st.header("📤 Upload Process Document")
     
@@ -160,13 +195,13 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type):
         if st.button("🚀 Generate Checkpoints", type="primary", use_container_width=True):
             with st.spinner("🔄 Processing document and generating checkpoints..."):
                 try:
-                    # Prepare request
                     files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
                     params = {
                         "use_rag": use_rag,
                         "num_checkpoints": num_checkpoints,
                         "ingest_to_kb": ingest_to_kb,
                         "process_type": _map_process_type(process_type),
+                        "llm_model": llm_model,
                     }
                     
                     # Call API
@@ -183,14 +218,15 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type):
                         # Display success message
                         st.success(f"✅ Successfully generated {result['num_checkpoints']} checkpoints!")
                         
-                        # Display info
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
-                            st.metric("Checkpoints Generated", result['num_checkpoints'])
+                            st.metric("Checkpoints", result['num_checkpoints'])
                         with col2:
                             st.metric("RAG Used", "Yes" if result['used_rag'] else "No")
                         with col3:
                             st.metric("Context Chunks", result.get('num_context_chunks', 0))
+                        with col4:
+                            st.metric("LLM Model", result.get('llm_model', 'N/A'))
 
                         detected_profile = result.get("process_profile")
                         detected_type = result.get("process_type")

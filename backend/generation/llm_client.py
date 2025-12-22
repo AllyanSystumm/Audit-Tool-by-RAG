@@ -309,6 +309,31 @@ class LocalLLMClient:
         return self.generate(messages, **kwargs)
 
 
+class LLMClientFactory:
+    _instances: Dict[str, LLMClient] = {}
+    
+    @classmethod
+    def get_client(cls, model_key: str = None) -> LLMClient:
+        model_key = model_key or config.DEFAULT_LLM
+        
+        if model_key not in cls._instances:
+            model_id = config.get_llm_model_id(model_key)
+            cls._instances[model_key] = LLMClient(model_name=model_id)
+            logger.info("Created new LLM client for model key: %s -> %s", model_key, model_id)
+        
+        return cls._instances[model_key]
+    
+    @classmethod
+    def get_all_clients(cls) -> Dict[str, LLMClient]:
+        for model_info in config.get_available_llms():
+            cls.get_client(model_info["key"])
+        return cls._instances
+    
+    @classmethod
+    def clear_cache(cls):
+        cls._instances.clear()
+
+
 if __name__ == "__main__":
     try:
         client = LLMClient()

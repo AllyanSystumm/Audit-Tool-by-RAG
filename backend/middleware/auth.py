@@ -13,7 +13,7 @@ from backend.config import config
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    EXEMPT_PATHS = {"/", "/health", "/docs", "/redoc", "/openapi.json"}
+    EXEMPT_PATHS = {"/", "/health", "/health/llm", "/docs", "/redoc", "/openapi.json", "/llm-models", "/metrics"}
 
     def __init__(
         self,
