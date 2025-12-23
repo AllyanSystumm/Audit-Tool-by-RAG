@@ -1,21 +1,19 @@
 """Streamlit frontend for Audit Tool."""
 
+import os
 import streamlit as st
 import requests
 import json
 from pathlib import Path
 
-# Configuration
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
-# Page configuration
 st.set_page_config(
     page_title="Audit Checkpoint Generator",
     page_icon="📋",
     layout="wide"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -80,21 +78,17 @@ def get_available_llm_models():
 
 def main():
     """Main application."""
-    
-    # Header
+
     st.markdown('<div class="main-header">📋 Audit Checkpoint Generator</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">AI-powered verification checkpoint generation for audit processes</div>', unsafe_allow_html=True)
-    
-    # Check backend status
+
     if not check_backend_health():
         st.error("⚠️ Backend server is not running. Please start the backend with: `python backend/main.py`")
         return
-    
-    # Sidebar
+
     with st.sidebar:
         st.header("⚙️ Configuration")
-        
-        # Mode selection
+
         mode = st.radio(
             "Select Mode:",
             ["Generate Checkpoints", "Build Knowledge Base", "Database Info"],
@@ -190,8 +184,7 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                 value=False,
                 help="If enabled, this uploaded document will be chunked/embedded and stored so future runs can retrieve from it."
             )
-        
-        # Generate button
+
         if st.button("🚀 Generate Checkpoints", type="primary", use_container_width=True):
             with st.spinner("🔄 Processing document and generating checkpoints..."):
                 try:
@@ -203,8 +196,7 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                         "process_type": _map_process_type(process_type),
                         "llm_model": llm_model,
                     }
-                    
-                    # Call API
+
                     response = requests.post(
                         f"{BACKEND_URL}/generate-checkpoints",
                         files=files,
@@ -214,8 +206,7 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                     
                     if response.status_code == 200:
                         result = response.json()
-                        
-                        # Display success message
+
                         st.success(f"✅ Successfully generated {result['num_checkpoints']} checkpoints!")
                         
                         col1, col2, col3, col4 = st.columns(4)
@@ -234,8 +225,7 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                             st.caption(f"Template: {detected_profile or 'None'} (process_type={detected_type or 'auto'})")
                         
                         st.divider()
-                        
-                        # Show retrieved context chunks (for RAG traceability)
+
                         retrieved = result.get("retrieved_chunks", [])
                         if isinstance(retrieved, list) and retrieved:
                             with st.expander("🔎 Retrieved Context Chunks (RAG Trace)", expanded=False):
@@ -252,10 +242,8 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                                         key=f"ctx_preview_{i}"
                                     )
 
-                        # Display checkpoints
                         st.header("📋 Generated Checkpoints")
-                        
-                        # If no checkpoints were parsed, show raw output
+
                         if result['num_checkpoints'] == 0:
                             st.warning("⚠️ No checkpoints were parsed. Showing raw LLM output:")
                             with st.expander("View Raw Output", expanded=True):
@@ -266,15 +254,13 @@ def generate_checkpoints_mode(use_rag, num_checkpoints, process_type, llm_model)
                                 f"**Checkpoint {idx}: {checkpoint.get('process_phase_reference', '').strip() or 'Checkpoint'}**",
                                 expanded=True
                             ):
-                                # New schema fields (fallback to legacy keys for backward compatibility)
                                 st.markdown(f"**Process Phase Reference:** {checkpoint.get('process_phase_reference', checkpoint.get('title', ''))}")
                                 st.markdown(f"**Standard Clause Reference:** {checkpoint.get('standard_clause_reference', checkpoint.get('standard_reference', 'TBD'))}")
                                 st.markdown(f"**Verification Section:** {checkpoint.get('verification_section', checkpoint.get('verification_objective', ''))}")
                                 st.markdown("---")
                                 st.markdown(f"**Prompt:**")
                                 st.markdown(checkpoint['prompt'])
-                        
-                        # Export all checkpoints
+
                         st.divider()
                         def _format_cp(cp, i: int) -> str:
                             phase = cp.get("process_phase_reference", "") or cp.get("title", f"Checkpoint {i}")
@@ -326,10 +312,8 @@ def build_knowledge_base_mode():
         if st.button("📥 Ingest Document", type="primary", use_container_width=True):
             with st.spinner("🔄 Processing and ingesting document..."):
                 try:
-                    # Prepare request
                     files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-                    
-                    # Call API
+
                     response = requests.post(
                         f"{BACKEND_URL}/ingest-documents",
                         files=files,

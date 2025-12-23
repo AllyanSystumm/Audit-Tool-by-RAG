@@ -1,0 +1,110 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: audit-backend
+    restart: unless-stopped
+
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - HF_TOKEN=${HF_TOKEN}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-20b}
+      - DEFAULT_LLM=${DEFAULT_LLM:-gpt-oss-20b}
+      - CHROMA_DB_PATH=/app/data/vector_db
+      - ENABLE_RERANKER=${ENABLE_RERANKER:-true}
+      - RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-base}
+      - LLM_MAX_RETRIES=${LLM_MAX_RETRIES:-3}
+      - LLM_REQUEST_TIMEOUT=${LLM_REQUEST_TIMEOUT:-120.0}
+      - API_KEY_ENABLED=${API_KEY_ENABLED:-false}
+      - API_KEYS=${API_KEYS:-}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - STRUCTURED_LOGGING=${STRUCTURED_LOGGING:-false}
+      - TOKENIZERS_PARALLELISM=false
+
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+    volumes:
+      - audit_vector_db:/app/data/vector_db
+      - audit_uploads:/app/data/uploads
+      - audit_hf_cache:/app/.cache/huggingface
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+    networks:
+      - audit-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: audit-frontend
+    restart: unless-stopped
+
+    command: >
+      streamlit run frontend/app.py 
+      --server.address 0.0.0.0 
+      --server.port 8501
+      --server.headless true
+      --browser.gatherUsageStats false
+
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+    networks:
+      - audit-network
+
+volumes:
+  audit_vector_db:
+    driver: local
+
+  audit_uploads:
+    driver: local
+
+  audit_hf_cache:
+    driver: local
+
+networks:
+  audit-network:
+    driver: bridge

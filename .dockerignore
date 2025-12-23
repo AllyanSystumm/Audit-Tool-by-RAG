@@ -1,0 +1,114 @@
+# ============================================================================
+# Docker Ignore File - Audit Tool
+# Excludes unnecessary files from the Docker build context
+# ============================================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments (we build fresh in container)
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation (not needed in container)
+docs/
+*.md
+!requirements.txt
+
+# Local data (mounted as volumes instead)
+data/
+*.sqlite3
+*.db
+
+# Environment files (passed via docker-compose)
+.env
+.env.*
+!env.example
+
+# Logs
+*.log
+logs/
+
+# Cache directories
+.cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker files (prevent recursion)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Models directory (if local models are stored)
+models/
+
+# Prompts directory (if not needed)
+prompts/
+
+# Benchmark outputs
+benchmark_report.md
+
+# Shell scripts (not needed in container)
+*.sh
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
