@@ -93,25 +93,47 @@ def retry_with_exponential_backoff(
 
 
 class LLMClient:
-    """Client for interacting with HuggingFace LLMs via OpenAI-compatible API."""
+    """Client for interacting with LLMs via OpenAI-compatible API (supports Ollama and HuggingFace)."""
     
     def __init__(
         self,
         model_name: str = None,
         api_key: str = None,
+        base_url: str = None,
+        provider: str = None,
         timeout: float = None,
         fallback_models: List[str] = None
     ):
         self.model_name = model_name or config.LLM_MODEL
-        self.api_key = api_key or config.HF_TOKEN
+        
+        # Determine provider if not specified
+        if provider is None:
+            # Try to get provider from model key in config
+            if self.model_name in config.LLM_MODELS:
+                provider = config.get_llm_provider(self.model_name)
+            else:
+                # Check if it's a known Ollama model name pattern or default to ollama
+                provider = "ollama" if not self.model_name.startswith(("openai/", "Qwen/", "BAAI/")) else "huggingface"
+        
+        self.provider = provider
+        
+        # Set API key and base URL based on provider
+        if self.provider == "ollama":
+            self.api_key = api_key or config.OLLAMA_API_KEY
+            self.base_url = base_url or config.OLLAMA_BASE_URL
+            if not self.api_key:
+                raise ValueError("Ollama API key not found. Set OLLAMA_API_KEY environment variable.")
+        else:  # huggingface
+            self.api_key = api_key or config.HF_TOKEN
+            self.base_url = base_url or "https://router.huggingface.co/v1"
+            if not self.api_key:
+                raise ValueError("HuggingFace API token not found. Set HF_TOKEN environment variable.")
+
         self.timeout = timeout or getattr(config, 'LLM_REQUEST_TIMEOUT', 120.0)
         self.fallback_models = fallback_models or getattr(config, 'LLM_FALLBACK_MODELS', [])
-        
-        if not self.api_key:
-            raise ValueError("HuggingFace API token not found. Set HF_TOKEN environment variable.")
 
         self.client = OpenAI(
-            base_url="https://router.huggingface.co/v1",
+            base_url=self.base_url,
             api_key=self.api_key,
             timeout=self.timeout
         )
@@ -120,7 +142,8 @@ class LLMClient:
         self._last_health_check = 0
         self._health_check_interval = getattr(config, 'LLM_HEALTH_CHECK_INTERVAL', 300)
         
-        logger.info("Initialized LLM client with model: %s (timeout: %.1fs)", self.model_name, self.timeout)
+        logger.info("Initialized LLM client with model: %s, provider: %s, base_url: %s (timeout: %.1fs)", 
+                   self.model_name, self.provider, self.base_url, self.timeout)
 
     def check_health(self, force: bool = False) -> bool:
         current_time = time.time()
@@ -318,8 +341,13 @@ class LLMClientFactory:
         
         if model_key not in cls._instances:
             model_id = config.get_llm_model_id(model_key)
-            cls._instances[model_key] = LLMClient(model_name=model_id)
-            logger.info("Created new LLM client for model key: %s -> %s", model_key, model_id)
+            provider = config.get_llm_provider(model_key)
+            cls._instances[model_key] = LLMClient(
+                model_name=model_id,
+                provider=provider
+            )
+            logger.info("Created new LLM client for model key: %s -> %s (provider: %s)", 
+                       model_key, model_id, provider)
         
         return cls._instances[model_key]
     

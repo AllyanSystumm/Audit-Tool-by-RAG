@@ -181,16 +181,25 @@ async def startup_event():
         if existing_count > 0:
             rebuilt = _rebuild_bm25_from_vector_store()
             logger.info("Rebuilt BM25 index from Chroma", count=rebuilt)
-        
-        if config.HF_TOKEN:
-            llm_client = LLMClient()
-            checkpoint_generator = CheckpointGenerator(llm_client)
-            logger.info("LLM client initialized successfully")
-        else:
-            logger.warning("HF_TOKEN not set. LLM features will be disabled.")
+      
+        # Initialize LLM client using factory (supports both Ollama and HuggingFace)
+        try:
+            if config.OLLAMA_API_KEY or config.HF_TOKEN:
+                llm_client = LLMClientFactory.get_client(config.DEFAULT_LLM)
+                checkpoint_generator = CheckpointGenerator(llm_client)
+                logger.info("LLM client initialized successfully via factory")
+            else:
+                llm_client = None
+                checkpoint_generator = None
+                logger.warning("No LLM API key found (OLLAMA_API_KEY or HF_TOKEN). LLM features will be disabled.")
+        except Exception as e:
+            llm_client = None
+            checkpoint_generator = None
+            logger.warning("LLM client not initialized: %s", str(e))
+            
         
         logger.info("All components initialized successfully")
-        
+       
     except Exception as e:
         logger.error("Error initializing components", error=str(e))
 
@@ -242,7 +251,7 @@ def llm_health_check(force: bool = False):
     if not llm_client:
         raise HTTPException(
             status_code=503,
-            detail="LLM client not initialized. Please set HF_TOKEN environment variable."
+            detail="LLM client not initialized. Please set OLLAMA_API_KEY or HF_TOKEN environment variable."
         )
     
     try:

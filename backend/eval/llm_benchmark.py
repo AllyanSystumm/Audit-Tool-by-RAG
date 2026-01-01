@@ -235,6 +235,7 @@ def run_benchmark(
         try:
             llm_client = LLMClientFactory.get_client(model_key)
             checkpoint_gen = CheckpointGenerator(llm_client)
+            
         except Exception as e:
             if verbose:
                 print(f"Failed to initialize model {model_key}: {e}")

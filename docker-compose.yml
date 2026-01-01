@@ -10,10 +10,12 @@ services:
     environment:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8000
-      - HF_TOKEN=${HF_TOKEN}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://api.ollama.ai/v1}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
-      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-20b}
-      - DEFAULT_LLM=${DEFAULT_LLM:-gpt-oss-20b}
+      - LLM_MODEL=${LLM_MODEL:-gpt-oss20b}
+      - DEFAULT_LLM=${DEFAULT_LLM:-gpt-oss20b}
       - CHROMA_DB_PATH=/app/data/vector_db
       - ENABLE_RERANKER=${ENABLE_RERANKER:-true}
       - RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-base}

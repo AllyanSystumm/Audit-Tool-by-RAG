@@ -22,15 +22,23 @@ class Config:
     VECTOR_DB_PATH = str((BASE_DIR / _raw_vector_db_path).resolve()) if not Path(_raw_vector_db_path).is_absolute() else _raw_vector_db_path
 
     HF_TOKEN = os.getenv("HF_TOKEN", "")
+    OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "")
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://api.ollama.ai/v1")
 
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
-    LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+    LLM_MODEL = os.getenv("LLM_MODEL", "gpt-oss20b")
     
     LLM_MODELS = {
+        "gpt-oss20b": {
+            "id": "gpt-oss20b",
+            "name": "GPT-OSS 20B",
+            "description": "Ollama GPT-OSS 20B parameter model",
+            "provider": "ollama",
+        },
         "gpt-oss-20b": {
             "id": "openai/gpt-oss-20b",
-            "name": "GPT-OSS 20B",
-            "description": "OpenAI GPT-OSS 20B parameter model",
+            "name": "GPT-OSS 20B (HuggingFace)",
+            "description": "OpenAI GPT-OSS 20B parameter model via HuggingFace",
             "provider": "huggingface",
         },
         "qwen2.5-72b": {
@@ -40,13 +48,21 @@ class Config:
             "provider": "huggingface",
         },
     }
-    DEFAULT_LLM = os.getenv("DEFAULT_LLM", "gpt-oss-20b")
+    DEFAULT_LLM = os.getenv("DEFAULT_LLM", "gpt-oss20b")
     
     @classmethod
     def get_llm_model_id(cls, model_key: str) -> str:
         if model_key in cls.LLM_MODELS:
             return cls.LLM_MODELS[model_key]["id"]
         return cls.LLM_MODEL
+    
+    @classmethod
+    def get_llm_provider(cls, model_key: str) -> str:
+        """Get the provider (ollama/huggingface) for a model key."""
+        if model_key in cls.LLM_MODELS:
+            return cls.LLM_MODELS[model_key]["provider"]
+        # Default to ollama if not specified
+        return "ollama"
     
     @classmethod
     def get_available_llms(cls) -> list:
